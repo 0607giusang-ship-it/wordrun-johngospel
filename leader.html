@@ -423,7 +423,7 @@
     align-items: center;
     padding-top: 4px;
   }
-  .wheel-wrap { position: relative; width: min(260px, 62vw); aspect-ratio: 1; margin: 4px 0 16px; }
+  .wheel-wrap { position: relative; width: min(320px, 74vw); aspect-ratio: 1; margin: 4px 0 16px; }
   .pointer {
     position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
     width: 0; height: 0;
@@ -1707,7 +1707,7 @@
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
         ctx.fillStyle = "#fdf8ec";
-        ctx.font = "600 " + Math.max(12, size * 0.03) + "px 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
+        ctx.font = "700 " + Math.max(18, size * 0.052) + "px 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
         var label = prizes[i];
         var maxW = r * 0.6;
         while (ctx.measureText(label).width > maxW && label.length > 2) {
