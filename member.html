@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>요한복음 21주 말씀런 · 조원용</title>
+<link rel="manifest" href="manifest-member.json">
+<meta name="theme-color" content="#1f3b57">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root {
     --bg: #f5efe1;
@@ -287,12 +290,60 @@
     margin-bottom: 12px;
   }
   input[type="file"] { display: none; }
+
+  .install-banner { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
+  .install-banner[hidden] { display: none; }
+  .install-banner-text { flex: 1; min-width: 0; }
+  .install-banner-text strong { display: block; font-size: 1.05rem; color: var(--ink); }
+  .install-banner-text span { display: block; font-size: 0.95rem; color: var(--ink-soft); margin-top: 2px; }
+  .install-btn { flex: none; font-family: inherit; font-size: 1.02rem; font-weight: 700; min-height: 56px; padding: 14px 22px; border-radius: 12px; border: none; background: var(--navy); color: #fff; cursor: pointer; white-space: nowrap; }
+  :root[data-theme="dark"] .install-btn { background: var(--gold); color: #1a1305; }
+  @media (prefers-color-scheme: dark) { .install-btn { background: var(--gold); color: #1a1305; } }
+  .install-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  @media (max-width: 480px) { .install-banner { flex-direction: column; align-items: stretch; } .install-btn { width: 100%; } }
+
+  .ios-install-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 999; }
+  .ios-install-modal[hidden] { display: none; }
+  .ios-install-card { background: var(--card); border-radius: 18px; padding: 26px 22px; max-width: 420px; width: 100%; text-align: center; }
+  .ios-install-card h2 { font-size: 1.2rem; margin: 0 0 14px; color: var(--ink); }
+  .ios-step { display: flex; align-items: center; gap: 14px; text-align: left; padding: 12px 0; border-top: 1px solid var(--border); }
+  .ios-step:first-of-type { border-top: none; }
+  .ios-step-icon { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; background: var(--bg-soft); border-radius: 10px; }
+  .ios-step-text { font-size: 1rem; color: var(--ink); }
+  .ios-install-close { margin-top: 18px; width: 100%; min-height: 56px; font-family: inherit; font-size: 1.05rem; font-weight: 700; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; }
 </style>
 </head>
 <body>
 <button class="theme-toggle" id="themeToggle" type="button" aria-label="테마 전환">라이트 / 다크</button>
 
 <div class="page">
+  <div class="install-banner" id="installBanner" hidden>
+    <div class="install-banner-text">
+      <strong>홈 화면에 추가하기</strong>
+      <span>다음부터는 QR을 다시 찍지 않아도, 홈 화면 아이콘만 눌러 바로 들어와요</span>
+    </div>
+    <button class="install-btn" id="installBtn" type="button">설치하기</button>
+  </div>
+
+  <div class="ios-install-modal" id="iosInstallModal" hidden>
+    <div class="ios-install-card">
+      <h2>홈 화면에 추가하는 방법</h2>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">⬆️</span>
+        <span class="ios-step-text">① 화면 아래쪽의 <strong>공유</strong> 버튼(네모 안에 위쪽 화살표)을 눌러주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">➕</span>
+        <span class="ios-step-text">② 아래로 조금 내려서 <strong>"홈 화면에 추가"</strong>를 선택해주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">✅</span>
+        <span class="ios-step-text">③ 오른쪽 위 <strong>"추가"</strong>를 누르면 끝이에요. 다음부터는 홈 화면 아이콘만 누르면 바로 들어와요</span>
+      </div>
+      <button class="ios-install-close" id="iosInstallClose" type="button">알겠어요, 닫기</button>
+    </div>
+  </div>
+
   <p class="eyebrow"><span class="member-badge">조원용</span>필사 × 읽기 소그룹 게임</p>
   <h1>요한복음 21주 말씀런</h1>
   <p class="sub">이름·제출 답안은 이 기기에 저장돼요. 리더가 등록해준 QR로 연결되면, 주차·요일 진행상황과 인증여부도 자동으로 맞춰지도록 클라우드(Firebase)에 함께 저장돼요.</p>
@@ -1309,6 +1360,60 @@
   }
 
   renderAll();
+})();
+</script>
+<script>
+(function () {
+  var installBanner = document.getElementById("installBanner");
+  var installBtn = document.getElementById("installBtn");
+  var iosModal = document.getElementById("iosInstallModal");
+  var iosClose = document.getElementById("iosInstallClose");
+  var deferredPrompt = null;
+
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  function isIOSSafari() {
+    var ua = window.navigator.userAgent;
+    var iOSDevice = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    var iPadOS13 = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    var isSafariEngine = /^((?!CriOS|FxiOS|EdgiOS|OPiOS).)*Safari/.test(ua);
+    return (iOSDevice || iPadOS13) && isSafariEngine;
+  }
+
+  if (isStandalone()) {
+    // already installed -- nothing to show
+  } else if (isIOSSafari()) {
+    installBanner.hidden = false;
+    installBtn.addEventListener("click", function () {
+      iosModal.hidden = false;
+    });
+    iosClose.addEventListener("click", function () {
+      iosModal.hidden = true;
+    });
+  } else {
+    window.addEventListener("beforeinstallprompt", function (e) {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBanner.hidden = false;
+    });
+    installBtn.addEventListener("click", function () {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.finally(function () {
+        deferredPrompt = null;
+        installBanner.hidden = true;
+      });
+    });
+    window.addEventListener("appinstalled", function () {
+      installBanner.hidden = true;
+    });
+  }
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  }
 })();
 </script>
 </body>
