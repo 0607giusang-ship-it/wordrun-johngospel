@@ -356,7 +356,7 @@
         <span class="status-title"><span id="weekLabel">1</span>주차 · 요한복음 <span class="gold" id="chapterLabel">1</span>장</span>
         <span class="status-day" id="dayLabel">월요일</span>
       </div>
-      <div class="sync-code-row">
+      <div class="sync-code-row" id="syncCodeRow">
         <input id="syncCodeInput" type="text" placeholder="리더에게 받은 진행 코드 붙여넣기" autocomplete="off">
         <button class="action-btn primary" id="applySyncCodeBtn" type="button">코드 적용</button>
       </div>
@@ -701,6 +701,10 @@
   })();
   var fbApi = null;
 
+  function isPaired() {
+    return !!(state.groupId && state.memberId);
+  }
+
   function getWeekData(w) {
     var key = String(w);
     if (!state.weekData[key]) {
@@ -740,6 +744,7 @@
   var chapterLabel = document.getElementById("chapterLabel");
   var dayLabel = document.getElementById("dayLabel");
   var syncStatusNote = document.getElementById("syncStatusNote");
+  var syncCodeRow = document.getElementById("syncCodeRow");
 
   var resetArmed = false;
   var showSubmitForm = {}; // quizIdx -> true면 이미 제출했어도 재입력 폼을 보여줌
@@ -757,7 +762,9 @@
     var p = document.createElement("p");
     p.className = "status-note";
     p.style.marginTop = "0";
-    p.textContent = "이름을 입력해 주세요. 이 기기에만 저장돼요. 시작 후에는 리더가 카톡으로 보내주는 진행 코드를 붙여넣으면 주차·요일이 자동으로 맞춰져요.";
+    p.textContent = isPaired()
+      ? "이름을 입력해 주세요. 이 기기에만 저장돼요. 리더와 이미 연결돼 있어서, 시작 후에는 주차·요일이 리더의 진행에 맞춰 자동으로 업데이트돼요."
+      : "이름을 입력해 주세요. 이 기기에만 저장돼요. 시작 후에는 리더가 카톡으로 보내주는 진행 코드를 붙여넣으면 주차·요일이 자동으로 맞춰져요.";
     card.appendChild(p);
 
     var nameRow = document.createElement("div");
@@ -869,7 +876,16 @@
     weekLabel.textContent = state.week;
     chapterLabel.textContent = state.week;
     dayLabel.textContent = DAY_NAMES[state.dayIndex];
-    syncStatusNote.textContent = "이 화면의 주차·요일은 리더가 보내주는 진행 코드로만 바뀌어요 — 코드를 받으면 위 칸에 붙여넣고 '코드 적용'을 눌러주세요.";
+    // QR로 이미 연결된(paired) 조원에게는 코드 입력칸이 필요 없다 — 오히려 "코드를 따로
+    // 붙여넣을 필요가 없다"는 안내와 모순돼 혼란을 준다는 오너 지적 반영. 완전 삭제가 아니라
+    // QR 연결이 안 된 조원을 위한 비상 수동경로로 남겨두고, paired일 때만 숨긴다.
+    if (isPaired()) {
+      syncCodeRow.style.display = "none";
+      syncStatusNote.textContent = "이 화면은 리더의 진행에 맞춰 자동으로 업데이트돼요.";
+    } else {
+      syncCodeRow.style.display = "";
+      syncStatusNote.textContent = "이 화면의 주차·요일은 리더가 보내주는 진행 코드로만 바뀌어요 — 코드를 받으면 위 칸에 붙여넣고 '코드 적용'을 눌러주세요.";
+    }
   }
 
   function renderToday() {
@@ -891,7 +907,7 @@
     h2.textContent = "월요일 · 읽기와 필사";
     card.appendChild(h2);
 
-    var paired = !!(state.groupId && state.memberId);
+    var paired = isPaired();
 
     var intro = document.createElement("p");
     intro.className = "status-note";
@@ -914,7 +930,9 @@
     var helper = document.createElement("p");
     helper.className = "disclaimer";
     if (wd.verified) {
-      helper.textContent = "리더가 인증을 확인했어요. 자동으로 연결된 경우 곧 화~토 퀴즈로 넘어가요 — 안 넘어가면 리더가 보내준 진행 코드를 위쪽 코드 입력칸에 붙여넣어 주세요.";
+      helper.textContent = paired
+        ? "리더가 인증을 확인했어요. 곧 화~토 퀴즈로 자동으로 넘어가요."
+        : "리더가 인증을 확인했어요. 리더가 보내준 진행 코드를 위쪽 코드 입력칸에 붙여넣으면 화~토 퀴즈로 넘어가요.";
     } else if (paired) {
       helper.textContent = wd.photoDataUrl
         ? "사진을 리더에게 보냈어요. 리더가 확인하면 자동으로 화~토 퀴즈로 넘어가요 — 기다리는 중이에요."
@@ -1055,7 +1073,9 @@
     if (!wd.verified) {
       var lockNote = document.createElement("p");
       lockNote.className = "empty-note";
-      lockNote.textContent = "월요일 인증이 아직 안 됐어요. 필사 인증샷을 카톡으로 보내고 리더가 확인하면, 리더가 보내주는 진행 코드를 위쪽 코드 입력칸에 붙여넣으세요 — 그러면 이 화면이 자동으로 열려요.";
+      lockNote.textContent = isPaired()
+        ? "월요일 인증이 아직 안 됐어요. 리더가 확인하면 이 화면이 자동으로 열려요."
+        : "월요일 인증이 아직 안 됐어요. 필사 인증샷을 카톡으로 보내고 리더가 확인하면, 리더가 보내주는 진행 코드를 위쪽 코드 입력칸에 붙여넣으세요 — 그러면 이 화면이 자동으로 열려요.";
       card.appendChild(lockNote);
       panelToday.appendChild(card);
       return;
@@ -1199,7 +1219,9 @@
     var intro = document.createElement("p");
     intro.className = "status-note";
     intro.style.marginTop = "0";
-    intro.textContent = "화~토에 제출한 내용을 모아봤어요(정답 확인은 아니에요 — 리더가 카톡으로 받은 메시지를 보고 채점해요). 소그룹 모임이 끝나면 리더가 보내주는 진행 코드를 받아 위 칸에 붙여넣으면 다음 주로 넘어가요.";
+    intro.textContent = "화~토에 제출한 내용을 모아봤어요(정답 확인은 아니에요 — 리더가 카톡으로 받은 메시지를 보고 채점해요). " + (isPaired()
+      ? "소그룹 모임이 끝나면 리더가 다음 주로 넘겨줘요 — 자동으로 넘어가요."
+      : "소그룹 모임이 끝나면 리더가 보내주는 진행 코드를 받아 위 칸에 붙여넣으면 다음 주로 넘어가요.");
     card.appendChild(intro);
 
     var weekQuizzes = QUIZ_DATA[state.week] || [];
