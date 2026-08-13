@@ -172,6 +172,7 @@
   .action-btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
   .action-btn.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
   .status-note { color: var(--ink-soft); font-size: 1rem; margin-top: 10px; }
+  .sync-reminder { color: var(--gold-ink); font-weight: 700; font-size: 1rem; margin: 0 0 10px; }
 
   .tabs { display: flex; gap: 8px; margin-bottom: 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .tab-btn {
@@ -356,6 +357,7 @@
         <span class="status-title"><span id="weekLabel">1</span>주차 · 요한복음 <span class="gold" id="chapterLabel">1</span>장</span>
         <span class="status-day" id="dayLabel">월요일</span>
       </div>
+      <p class="sync-reminder" id="syncReminderNote" hidden></p>
       <div class="sync-code-row" id="syncCodeRow">
         <input id="syncCodeInput" type="text" placeholder="리더에게 받은 진행 코드 붙여넣기" autocomplete="off">
         <button class="action-btn primary" id="applySyncCodeBtn" type="button">코드 적용</button>
@@ -745,6 +747,7 @@
   var dayLabel = document.getElementById("dayLabel");
   var syncStatusNote = document.getElementById("syncStatusNote");
   var syncCodeRow = document.getElementById("syncCodeRow");
+  var syncReminderNote = document.getElementById("syncReminderNote");
 
   var resetArmed = false;
   var showSubmitForm = {}; // quizIdx -> true면 이미 제출했어도 재입력 폼을 보여줌
@@ -882,9 +885,16 @@
     if (isPaired()) {
       syncCodeRow.style.display = "none";
       syncStatusNote.textContent = "이 화면은 리더의 진행에 맞춰 자동으로 업데이트돼요.";
+      syncReminderNote.hidden = true;
     } else {
       syncCodeRow.style.display = "";
       syncStatusNote.textContent = "이 화면의 주차·요일은 리더가 보내주는 진행 코드로만 바뀌어요 — 코드를 받으면 위 칸에 붙여넣고 '코드 적용'을 눌러주세요.";
+      // 수동모드(코드 입력)를 한 번 선택하고 나면 그 뒤로는 QR 안내 자체가 다시 뜨지 않아,
+      // "이게 정상 흐름이구나" 오해가 굳어지는 문제(오너 신고) — 그래서 unpaired인 동안은
+      // 코드 입력칸이 보일 때마다 이 리마인더로 QR 등록 경로를 계속 상기시킨다. 기존 코드
+      // 입력 기능 자체는 그대로 두고, 그 위에 얹는 상시 안내일 뿐이다.
+      syncReminderNote.hidden = false;
+      syncReminderNote.textContent = "아직 리더와 자동으로 연결되지 않았어요. 리더에게 '등록 QR'을 요청해서 스캔하면, 이 칸에 코드를 직접 넣지 않아도 자동으로 연결돼요.";
     }
   }
 
