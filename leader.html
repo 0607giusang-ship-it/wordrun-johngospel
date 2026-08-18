@@ -508,12 +508,25 @@
   .ios-step-icon { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; background: var(--bg-soft); border-radius: 10px; }
   .ios-step-text { font-size: 1rem; color: var(--ink); }
   .ios-install-close { margin-top: 18px; width: 100%; min-height: 56px; font-family: inherit; font-size: 1.05rem; font-weight: 700; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; }
+
+  .kakao-banner { border-color: #e2a33a; }
+  .kakao-banner .install-btn { background: #b8641a; }
+  :root[data-theme="dark"] .kakao-banner .install-btn { background: #e2a33a; color: #1a1305; }
+  @media (prefers-color-scheme: dark) { .kakao-banner .install-btn { background: #e2a33a; color: #1a1305; } }
 </style>
 </head>
 <body>
 <button class="theme-toggle" id="themeToggle" type="button" aria-label="테마 전환">라이트 / 다크</button>
 
 <div class="page">
+  <div class="install-banner kakao-banner" id="kakaoBanner" hidden>
+    <div class="install-banner-text">
+      <strong>카카오톡 안에서 열려 있어요</strong>
+      <span id="kakaoBannerSub">설치와 자동연결이 잘 안 될 수 있어요. 다른 브라우저로 열어주세요</span>
+    </div>
+    <button class="install-btn" id="kakaoOpenBtn" type="button">다른 브라우저로 열기</button>
+  </div>
+
   <div class="install-banner" id="installBanner" hidden>
     <div class="install-banner-text">
       <strong>홈 화면에 추가하기</strong>
@@ -538,6 +551,25 @@
         <span class="ios-step-text">③ 오른쪽 위 <strong>"추가"</strong>를 누르면 끝이에요. 다음부터는 홈 화면 아이콘만 누르면 바로 들어와요</span>
       </div>
       <button class="ios-install-close" id="iosInstallClose" type="button">알겠어요, 닫기</button>
+    </div>
+  </div>
+
+  <div class="ios-install-modal" id="genericInstallModal" hidden>
+    <div class="ios-install-card">
+      <h2>홈 화면에 추가하는 방법</h2>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">⋮</span>
+        <span class="ios-step-text">① 브라우저 오른쪽 위(또는 아래)의 <strong>메뉴(⋮ 또는 ≡)</strong>를 눌러주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">➕</span>
+        <span class="ios-step-text">② <strong>"홈 화면에 추가"</strong> 또는 <strong>"앱 설치"</strong>를 선택해주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">✅</span>
+        <span class="ios-step-text">③ 확인을 누르면 끝이에요. 다음부터는 홈 화면 아이콘만 누르면 바로 들어와요</span>
+      </div>
+      <button class="ios-install-close" id="genericInstallClose" type="button">알겠어요, 닫기</button>
     </div>
   </div>
 
@@ -1988,6 +2020,11 @@
   var installBtn = document.getElementById("installBtn");
   var iosModal = document.getElementById("iosInstallModal");
   var iosClose = document.getElementById("iosInstallClose");
+  var genericModal = document.getElementById("genericInstallModal");
+  var genericClose = document.getElementById("genericInstallClose");
+  var kakaoBanner = document.getElementById("kakaoBanner");
+  var kakaoOpenBtn = document.getElementById("kakaoOpenBtn");
+  var kakaoBannerSub = document.getElementById("kakaoBannerSub");
   var deferredPrompt = null;
 
   function isStandalone() {
@@ -2002,8 +2039,28 @@
     return (iOSDevice || iPadOS13) && isSafariEngine;
   }
 
+  // 카카오톡 인앱 브라우저는 beforeinstallprompt가 발생하지 않는다 — 설치 배너 대신
+  // "다른 브라우저로 열기" 안내를 최우선으로 보여준다.
+  function isKakaoInApp() {
+    return /KAKAOTALK/i.test(window.navigator.userAgent);
+  }
+
+  function isAndroid() {
+    return /Android/i.test(window.navigator.userAgent);
+  }
+
   if (isStandalone()) {
     // already installed -- nothing to show
+  } else if (isKakaoInApp()) {
+    kakaoBanner.hidden = false;
+    kakaoOpenBtn.addEventListener("click", function () {
+      if (isAndroid()) {
+        location.href = "intent://" + location.href.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=com.android.chrome;end";
+      } else {
+        kakaoOpenBtn.hidden = true;
+        kakaoBannerSub.textContent = "오른쪽 아래 \"⋯\" 메뉴를 누른 뒤 \"Safari로 열기\"를 선택해주세요";
+      }
+    });
   } else if (isIOSSafari()) {
     installBanner.hidden = false;
     installBtn.addEventListener("click", function () {
@@ -2013,22 +2070,35 @@
       iosModal.hidden = true;
     });
   } else {
+    // 삼성인터넷·네이버웨일 등 beforeinstallprompt 미지원/불안정 브라우저 대비:
+    // 일정 시간 기다려도 이벤트가 안 오면 배너는 띄우되 클릭 시 수동 안내 모달로 대체한다.
+    var promptFired = false;
     window.addEventListener("beforeinstallprompt", function (e) {
       e.preventDefault();
       deferredPrompt = e;
+      promptFired = true;
       installBanner.hidden = false;
     });
     installBtn.addEventListener("click", function () {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.finally(function () {
-        deferredPrompt = null;
-        installBanner.hidden = true;
-      });
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.finally(function () {
+          deferredPrompt = null;
+          installBanner.hidden = true;
+        });
+      } else {
+        genericModal.hidden = false;
+      }
+    });
+    genericClose.addEventListener("click", function () {
+      genericModal.hidden = true;
     });
     window.addEventListener("appinstalled", function () {
       installBanner.hidden = true;
     });
+    setTimeout(function () {
+      if (!promptFired && !isStandalone()) installBanner.hidden = false;
+    }, 2500);
   }
 
   if ("serviceWorker" in navigator) {

@@ -312,12 +312,28 @@
   .ios-step-icon { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; background: var(--bg-soft); border-radius: 10px; }
   .ios-step-text { font-size: 1rem; color: var(--ink); }
   .ios-install-close { margin-top: 18px; width: 100%; min-height: 56px; font-family: inherit; font-size: 1.05rem; font-weight: 700; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; }
+
+  .kakao-banner { border-color: #e2a33a; }
+  .kakao-banner .install-btn { background: #b8641a; }
+  :root[data-theme="dark"] .kakao-banner .install-btn { background: #e2a33a; color: #1a1305; }
+  @media (prefers-color-scheme: dark) { .kakao-banner .install-btn { background: #e2a33a; color: #1a1305; } }
+  .storage-warn-note[hidden] { display: none; }
 </style>
 </head>
 <body>
 <button class="theme-toggle" id="themeToggle" type="button" aria-label="테마 전환">라이트 / 다크</button>
 
 <div class="page">
+  <p class="sync-reminder storage-warn-note" id="storageWarnNote" hidden>이 브라우저에서는 등록 정보가 저장되지 않고 있어요 — 시크릿/프라이빗 모드라면 꺼주시고, 아니라면 홈 화면에 추가한 뒤 그 아이콘으로 다시 열어주세요. 그래야 QR 등록이 계속 유지돼요.</p>
+
+  <div class="install-banner kakao-banner" id="kakaoBanner" hidden>
+    <div class="install-banner-text">
+      <strong>카카오톡 안에서 열려 있어요</strong>
+      <span id="kakaoBannerSub">설치와 자동연결이 잘 안 될 수 있어요. 다른 브라우저로 열어주세요</span>
+    </div>
+    <button class="install-btn" id="kakaoOpenBtn" type="button">다른 브라우저로 열기</button>
+  </div>
+
   <div class="install-banner" id="installBanner" hidden>
     <div class="install-banner-text">
       <strong>홈 화면에 추가하기</strong>
@@ -342,6 +358,25 @@
         <span class="ios-step-text">③ 오른쪽 위 <strong>"추가"</strong>를 누르면 끝이에요. 다음부터는 홈 화면 아이콘만 누르면 바로 들어와요</span>
       </div>
       <button class="ios-install-close" id="iosInstallClose" type="button">알겠어요, 닫기</button>
+    </div>
+  </div>
+
+  <div class="ios-install-modal" id="genericInstallModal" hidden>
+    <div class="ios-install-card">
+      <h2>홈 화면에 추가하는 방법</h2>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">⋮</span>
+        <span class="ios-step-text">① 브라우저 오른쪽 위(또는 아래)의 <strong>메뉴(⋮ 또는 ≡)</strong>를 눌러주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">➕</span>
+        <span class="ios-step-text">② <strong>"홈 화면에 추가"</strong> 또는 <strong>"앱 설치"</strong>를 선택해주세요</span>
+      </div>
+      <div class="ios-step">
+        <span class="ios-step-icon" aria-hidden="true">✅</span>
+        <span class="ios-step-text">③ 확인을 누르면 끝이에요. 다음부터는 홈 화면 아이콘만 누르면 바로 들어와요</span>
+      </div>
+      <button class="ios-install-close" id="genericInstallClose" type="button">알겠어요, 닫기</button>
     </div>
   </div>
 
@@ -665,6 +700,22 @@
     };
   }
 
+  // 시크릿/프라이빗 모드나 일부 인앱 브라우저는 localStorage 쓰기가 조용히 실패하거나
+  // 세션이 끝나면 사라진다 — 이 경우 QR 등록(groupId/memberId)이 저장 안 된 것처럼
+  // 보이는데 사용자에게는 아무 에러도 안 뜨는 게 원래 문제였다. 시작 시 한 번 실측해서
+  // 저장이 실제로 유지되는지 확인하고, 안 되면 배너로 알린다.
+  function storageWorks() {
+    try {
+      var k = "__wr21_storage_test__";
+      localStorage.setItem(k, "1");
+      var ok = localStorage.getItem(k) === "1";
+      localStorage.removeItem(k);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -685,6 +736,11 @@
   if (typeof state.week !== "number" || state.week < 1) state.week = 1;
   if (state.week > TOTAL_WEEKS) state.week = TOTAL_WEEKS;
   if (typeof state.dayIndex !== "number" || state.dayIndex < 0 || state.dayIndex > 6) state.dayIndex = 0;
+
+  if (!storageWorks()) {
+    var storageWarnNote = document.getElementById("storageWarnNote");
+    if (storageWarnNote) storageWarnNote.hidden = false;
+  }
 
   // ---------- Firebase 페어링(조원별 등록 QR) ----------
   // URL 쿼리에 g(groupId)·m(memberId)이 있으면(리더의 등록 QR을 스캔한 직후) 영구 저장하고
@@ -1400,6 +1456,11 @@
   var installBtn = document.getElementById("installBtn");
   var iosModal = document.getElementById("iosInstallModal");
   var iosClose = document.getElementById("iosInstallClose");
+  var genericModal = document.getElementById("genericInstallModal");
+  var genericClose = document.getElementById("genericInstallClose");
+  var kakaoBanner = document.getElementById("kakaoBanner");
+  var kakaoOpenBtn = document.getElementById("kakaoOpenBtn");
+  var kakaoBannerSub = document.getElementById("kakaoBannerSub");
   var deferredPrompt = null;
 
   function isStandalone() {
@@ -1414,8 +1475,32 @@
     return (iOSDevice || iPadOS13) && isSafariEngine;
   }
 
+  // 카카오톡 인앱 브라우저: beforeinstallprompt가 발생하지 않고(안드로이드·iOS 공통),
+  // 리더 등록 QR로 페어링해도 이 인앱 브라우저의 저장공간이 사파리/크롬과 분리돼 있어
+  // 다음에 카톡 링크로 다시 들어오면 등록이 안 된 것처럼 보일 수 있다 — 그래서 설치
+  // 배너 대신 "다른 브라우저로 열기" 안내를 최우선으로 보여준다.
+  function isKakaoInApp() {
+    return /KAKAOTALK/i.test(window.navigator.userAgent);
+  }
+
+  function isAndroid() {
+    return /Android/i.test(window.navigator.userAgent);
+  }
+
   if (isStandalone()) {
     // already installed -- nothing to show
+  } else if (isKakaoInApp()) {
+    kakaoBanner.hidden = false;
+    kakaoOpenBtn.addEventListener("click", function () {
+      if (isAndroid()) {
+        // 카카오톡 인앱 브라우저에서 크롬으로 강제 이동하는 널리 쓰이는 intent 스킴.
+        // 크롬이 없거나 안드로이드가 아니면 그냥 아무 일도 안 일어날 뿐이라 안전하다.
+        location.href = "intent://" + location.href.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=com.android.chrome;end";
+      } else {
+        kakaoOpenBtn.hidden = true;
+        kakaoBannerSub.textContent = "오른쪽 아래 \"⋯\" 메뉴를 누른 뒤 \"Safari로 열기\"를 선택해주세요";
+      }
+    });
   } else if (isIOSSafari()) {
     installBanner.hidden = false;
     installBtn.addEventListener("click", function () {
@@ -1425,22 +1510,36 @@
       iosModal.hidden = true;
     });
   } else {
+    // 삼성인터넷·네이버웨일·안드로이드 파이어폭스 등은 beforeinstallprompt를 아예
+    // 안 쏘거나 지원이 불안정하다. 일정 시간 기다려도 이벤트가 안 오면, 배너는
+    // 그대로 띄우되(버튼 문구는 동일) 클릭 시 수동 설치 안내 모달로 대체한다.
+    var promptFired = false;
     window.addEventListener("beforeinstallprompt", function (e) {
       e.preventDefault();
       deferredPrompt = e;
+      promptFired = true;
       installBanner.hidden = false;
     });
     installBtn.addEventListener("click", function () {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.finally(function () {
-        deferredPrompt = null;
-        installBanner.hidden = true;
-      });
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.finally(function () {
+          deferredPrompt = null;
+          installBanner.hidden = true;
+        });
+      } else {
+        genericModal.hidden = false;
+      }
+    });
+    genericClose.addEventListener("click", function () {
+      genericModal.hidden = true;
     });
     window.addEventListener("appinstalled", function () {
       installBanner.hidden = true;
     });
+    setTimeout(function () {
+      if (!promptFired && !isStandalone()) installBanner.hidden = false;
+    }, 2500);
   }
 
   if ("serviceWorker" in navigator) {
