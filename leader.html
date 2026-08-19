@@ -1132,14 +1132,14 @@
     var jsDay = new Date().getDay();
     return (jsDay + 6) % 7;
   }
-  // 금요일 제출 예외(오너 요청③) — 실제 토요일에도 금요일 퀴즈(quizIdx 3) 창을 그대로
-  // 유지해 "토요일까지 이용가능"을 구현한다. 이 캡 때문에 dayIndex=5(토요일 전용 퀴즈,
-  // quizIdx 4)는 캘린더 자동전환 도입 이후로는 더 이상 자동으로 도달하지 않는다 — 기존
-  // QUIZ_DATA는 그대로 남겨두어(데이터 삭제 없음) 이후 오너가 이 캡을 없애기로 하면 바로
-  // 되살릴 수 있다. 일요일은 그대로 6(돌림판).
+  // [master 확인요청 반영 — 배포후 설계오류 수정] 처음엔 실제 토요일에도 dayIndex를
+  // 4(금요일)로 캡했었는데, 이는 오너 스펙("화~토 5일 윈도우, 금요일예외시에만 특별취급")을
+  // 잘못 해석한 결함이었다 — 그 캡 때문에 화~목요일에 인증한 조원들의 토요일 퀴즈
+  // (quizIdx4, "토" 문항 — QUIZ_DATA에 이미 실존하는 5번째 문항)가 영원히 안 열렸다.
+  // 올바른 동작은 dayIndex가 캡 없이 실제 요일 그대로(토요일=5) 진행되는 것 — 금요일
+  // 예외는 dayIndex 계산이 아니라 아래 접근규칙(renderQuizDay의 accessOk)에서만 다룬다.
   function calendarDayIndex() {
-    var raw = todayRawWeekday();
-    return raw === 5 ? 4 : raw;
+    return todayRawWeekday();
   }
   // 리더·조원 양쪽이 각자 자기 기기 시계로 이 함수를 호출해 "오늘이 무슨 요일인지"를
   // 독립적으로 계산한다(리더 기기가 매일 켜져 있어야만 진행되는 단일 장애점을 피하기
@@ -1289,9 +1289,7 @@
   function renderStatusBar() {
     weekLabel.textContent = state.week;
     chapterLabel.textContent = state.week;
-    // 실제 토요일엔 state.dayIndex가 4(금요일 퀴즈)로 캡되어 있어 그대로 DAY_NAMES를 쓰면
-    // "금요일"이라고 잘못 표시된다 — 실제 요일 이름은 따로 보여주고 연장 중임을 안내한다.
-    dayLabel.textContent = todayRawWeekday() === 5 ? "토요일 · 금요일 퀴즈 연장" : DAY_NAMES[state.dayIndex];
+    dayLabel.textContent = DAY_NAMES[state.dayIndex];
     if (state.startDate) {
       startDateNote.textContent = "시작일: " + state.startDate + " (1주차 월요일 기준)";
       startDateInput.value = state.startDate;
@@ -1381,8 +1379,8 @@
       return;
     }
     // 오너 요청① — 필사 인증 카드는 월~금 상시노출(요일이 지나도 계속 접근 가능해야
-    // 늦게 제출하는 조원도 인증할 수 있다). dayIndex는 calendarDayIndex()로 캡되므로
-    // 토요일도 5가 아니라 4로 들어와 quizIdx3(금요일 퀴즈) 창이 자연히 유지된다.
+    // 늦게 제출하는 조원도 인증할 수 있다). 토요일(dayIndex5)엔 이 카드는 숨고 그날의
+    // 퀴즈(quizIdx4, "토")만 보인다 — 사진 제출은 월~금까지만.
     if (state.dayIndex >= 0 && state.dayIndex <= 4) {
       renderMonday();
     }
@@ -1403,7 +1401,7 @@
     var intro = document.createElement("p");
     intro.className = "status-note";
     intro.style.marginTop = "0";
-    intro.textContent = "요한복음 " + state.week + "장을 읽고 필사한 사진을 조원이 앱에서 올리면 아래 썸네일로 바로 보여요. 앱으로 제출하면 리더가 따로 누르지 않아도 자동으로 인증되고(카톡으로만 받은 경우엔 아래에서 직접 인증확인을 눌러주세요), 인증된 다음 날부터 화~금 퀴즈가 열려요(금요일에 인증하면 그날 바로 열리고 토요일까지 계속 이용할 수 있어요). 이 카드는 월~금 계속 열려 있으니 언제든 확인·인증할 수 있어요.";
+    intro.textContent = "요한복음 " + state.week + "장을 읽고 필사한 사진을 조원이 앱에서 올리면 아래 썸네일로 바로 보여요. 앱으로 제출하면 리더가 따로 누르지 않아도 자동으로 인증되고(카톡으로만 받은 경우엔 아래에서 직접 인증확인을 눌러주세요), 인증된 다음 날부터 그 주의 남은 화~토 퀴즈가 계속 열려요(금요일에 인증하면 그날 바로 열려요 — 유일한 예외). 이 카드는 월~금 계속 열려 있으니 언제든 확인·인증할 수 있어요.";
     card.appendChild(intro);
 
     var wd = getWeekData(state.week);

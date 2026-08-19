@@ -535,9 +535,13 @@
     var jsDay = new Date().getDay();
     return (jsDay + 6) % 7;
   }
+  // [master 확인요청 반영 — 배포후 설계오류 수정] 실제 토요일을 4(금요일)로 캡하는 잘못된
+  // 해석이 있었으나, 오너 스펙은 "화~토 5일 윈도우, 금요일만 특별취급"이므로 dayIndex는
+  // 캡 없이 그대로(토요일=5) 진행되어야 한다 — 캡이 있으면 화~목요일 인증자의 토요일
+  // 퀴즈(quizIdx4, "토")가 영원히 안 열린다. 금요일 예외는 renderQuizDay의 접근규칙에서만
+  // 다룬다.
   function calendarDayIndex() {
-    var raw = todayRawWeekday();
-    return raw === 5 ? 4 : raw;
+    return todayRawWeekday();
   }
 
   var QUIZ_DATA = {
@@ -960,7 +964,7 @@
   function renderStatusBar() {
     weekLabel.textContent = state.week;
     chapterLabel.textContent = state.week;
-    dayLabel.textContent = todayRawWeekday() === 5 ? "토요일 · 금요일 퀴즈 연장" : DAY_NAMES[state.dayIndex];
+    dayLabel.textContent = DAY_NAMES[state.dayIndex];
     // QR로 이미 연결된(paired) 조원에게는 코드 입력칸이 필요 없다 — 오히려 "코드를 따로
     // 붙여넣을 필요가 없다"는 안내와 모순돼 혼란을 준다는 오너 지적 반영. 완전 삭제가 아니라
     // QR 연결이 안 된 조원을 위한 비상 수동경로로 남겨두고, paired일 때만 숨긴다.
@@ -982,11 +986,9 @@
 
   function renderToday() {
     panelToday.innerHTML = "";
-    // 오너 요청① — 필사 인증 카드는 월~금(raw 0~4) 상시노출. state.dayIndex는
-    // calendarDayIndex()로 캡되어 실제 토요일에도 4(금요일 퀴즈)로 들어오므로, 인증
-    // 카드 노출 여부는 캡 없는 실제 요일(raw)로 따로 판단해야 토요일엔 정확히 숨는다.
-    var raw = todayRawWeekday();
-    if (raw >= 0 && raw <= 4) {
+    // 오너 요청① — 필사 인증 카드는 월~금(dayIndex 0~4) 상시노출. 토요일(5)엔 이 카드는
+    // 숨고 그날의 퀴즈(quizIdx4, "토")만 보인다 — 사진 제출은 월~금까지만.
+    if (state.dayIndex >= 0 && state.dayIndex <= 4) {
       renderMonday();
     }
     if (state.dayIndex >= 1 && state.dayIndex <= 5) {
@@ -1011,7 +1013,7 @@
     intro.className = "status-note";
     intro.style.marginTop = "0";
     intro.textContent = paired
-      ? "이번 주 요한복음 " + state.week + "장을 읽고 필사한 사진을 아래에서 바로 제출하면 리더에게 전달되고, 자동으로 인증돼요(리더가 따로 누르지 않아도 돼요). 인증한 다음 날부터 화~금 퀴즈가 열리고, 금요일에 인증하면 그날 바로 열려서 토요일까지 이용할 수 있어요. 이 카드는 월~금 계속 열려 있으니 늦게 인증해도 괜찮아요."
+      ? "이번 주 요한복음 " + state.week + "장을 읽고 필사한 사진을 아래에서 바로 제출하면 리더에게 전달되고, 자동으로 인증돼요(리더가 따로 누르지 않아도 돼요). 인증한 다음 날부터 그 주의 남은 화~토 퀴즈가 계속 열려요(금요일에 인증하면 그날 바로 열려요 — 유일한 예외). 이 카드는 월~금 계속 열려 있으니 늦게 인증해도 괜찮아요."
       : "이번 주 요한복음 " + state.week + "장을 읽고 필사한 내용을 사진으로 찍어 인증샷을 카톡으로 리더에게 보내주세요.";
     card.appendChild(intro);
 
@@ -1193,7 +1195,7 @@
     // 그날 바로 열린다(유일 예외, state.dayIndex===4일 때만 해당). verifiedDayIndex가
     // 없는 기존 인증자(이 필드 도입 이전에 이미 인증된 조원)는 월요일(0) 인증으로 간주—
     // 과거엔 인증이 항상 월요일에만 일어났던 구조였으므로 안전한 기본값이고, 이렇게 두면
-    // 화~금 어느 요일이든 그대로 접근 가능해 기존 사용자 흐름이 끊기지 않는다.
+    // 화~토 어느 요일이든 그대로 접근 가능해 기존 사용자 흐름이 끊기지 않는다.
     var vDay = (lastMemberData && typeof lastMemberData.verifiedDayIndex === "number")
       ? lastMemberData.verifiedDayIndex
       : 0;
