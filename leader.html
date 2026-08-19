@@ -1254,13 +1254,19 @@
   }
 
   // 조원이 정답을 제출하면 즉시 자동채점해 적립한다(오너 요청④⑤ — 리더 확인 클릭
-  // 불필요). 같은 제출을 중복 적립하지 않도록(멱등성) 방금 자동채점에 반영한 제출
-  // 텍스트를 기억해두고, 그 텍스트가 그대로면 다시 건드리지 않는다 — 그래야 리더가 정답/
-  // 오답 버튼으로 수동 재판정을 해둔 걸 이 자동채점이 다음 스냅샷에서 도로 덮어쓰지
-  // 않는다(새로 제출된 답이 오면 그때는 다시 자동채점한다). wd.quiz는 (주차,조원,quizIdx)
-  // 키 하나당 값 하나만 갖는 객체라 여러 번 같은 값을 적어도 쿠폰 집계(couponsFor)가
-  // 중복 가산되지 않는다 — 구조 자체가 멱등적이다.
-  var quizAutoAppliedFor = {};
+  // 불필요). [reviewer-claude-1 REFUTE 지적 반영, evidence#1] 최초 구현은 "방금 처리한
+  // 제출 텍스트"를 top-level 변수(quizAutoAppliedFor)에만 기억해뒀는데, 이 변수는
+  // 페이지를 새로고침하면 비워지는 반면 onSnapshot 구독은 재구독 즉시 "현재" 스냅샷으로
+  // 최초 콜백이 발화하는 게 Firestore 표준 동작이라 — 조원이 다시 제출하지 않아도 리로드
+  // 한 번마다 이미 리더가 손으로 재판정해 wd.quiz(localStorage에 영속)에 저장해둔 값이
+  // autoJudgeQuiz 원래 판정으로 조용히 덮어써지는 결함이 있었다(리로드-오버라이트).
+  // 고쳐서: "이 문제에 이미 어떤 값이든(자동이든 리더 수동이든) 채점이 돼 있으면 다시
+  // 건드리지 않는다"로 가드를 wd.quiz 자체의 존재 여부 기반으로 단순화했다 — wd.quiz는
+  // 이미 localStorage에 영속되는 값이라 리로드에도 안전하고, 별도 비영속 추적 변수가
+  // 필요 없다. 대가: 조원이 답을 고쳐 재제출해도 이미 채점된 문항은 자동으로 재채점되지
+  // 않는다(리더가 정답/오답 버튼으로 null로 되돌리면 그 다음 스냅샷에서 다시 자동채점됨) —
+  // 실사용 라이브 앱에서는 "리더 모르게 조용히 덮어써지는 것"보다 "재채점이 자동으로 안
+  // 됨"이 훨씬 안전한 실패 모드라 이 트레이드오프를 택했다.
   function applyIncomingQuizAutoGrade(memberId, data) {
     if (!data || !data.quizAnswers) return;
     for (var key in data.quizAnswers) {
@@ -1271,14 +1277,11 @@
       if (!sub || !sub.answer) continue;
       var wd = getWeekData(w);
       if (!wd.verified[memberId]) continue;
-      if (!quizAutoAppliedFor[memberId]) quizAutoAppliedFor[memberId] = {};
-      var trackKey = w + "-" + qIdx;
-      if (quizAutoAppliedFor[memberId][trackKey] === sub.answer) continue;
+      if (!wd.quiz[memberId]) wd.quiz[memberId] = {};
+      if (wd.quiz[memberId][qIdx] != null) continue;
       var suggestion = autoJudgeQuiz(w, qIdx, sub.answer);
       if (!suggestion) continue;
-      if (!wd.quiz[memberId]) wd.quiz[memberId] = {};
       wd.quiz[memberId][qIdx] = suggestion;
-      quizAutoAppliedFor[memberId][trackKey] = sub.answer;
       save();
     }
   }
