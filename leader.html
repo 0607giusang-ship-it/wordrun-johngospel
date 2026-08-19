@@ -583,9 +583,7 @@
       <span class="status-day" id="dayLabel">월요일</span>
     </div>
     <div class="status-nav">
-      <button class="nav-btn" id="prevDayBtn" type="button">◀ 하루 전</button>
-      <button class="nav-btn" id="nextDayBtn" type="button">하루 뒤 ▶</button>
-      <button class="nav-btn" id="syncTodayBtn" type="button">오늘 날짜로 맞추기</button>
+      <button class="nav-btn" id="syncTodayBtn" type="button">이번 주 시작일 다시 맞추기</button>
       <button class="action-btn primary" id="nextWeekBtn" type="button">다음 주로 ▶▶</button>
     </div>
     <p class="status-note" id="startDateNote"></p>
@@ -620,11 +618,11 @@
           <button class="action-btn primary" id="startDateBtn" type="button">설정</button>
         </div>
       </div>
-      <p class="status-note">손으로 요일을 옮긴 뒤에도 이 버튼이나 상단 "오늘 날짜로 맞추기"를 누르면 실제 달력 날짜에 맞게 다시 돌아와요.</p>
+      <p class="status-note">요일은 이제 실제 달력 날짜에 맞춰 자동으로 넘어가요(자정 기준). 이 버튼은 "몇 주차"인지만 다시 맞출 때 써요 — 주를 수동으로 건너뛰었거나 시작일을 처음 등록할 때만 누르면 됩니다.</p>
     </div>
     <div class="card">
       <h2>오늘의 진행 코드</h2>
-      <p class="status-note">실제로 하루를 넘겨 다음 요일로 진행했을 때 이 버튼을 눌러 코드를 만드세요. 조원 단체 카톡방에 한 번 올리면, 이미 인증된 조원들이 각자 이 코드를 앱에 붙여넣어 그날의 새 퀴즈로 넘어갈 수 있어요(아직 인증 안 된 조원은 코드를 넣어도 인증 화면에 그대로 머물러요).</p>
+      <p class="status-note">요일은 자동으로 넘어가지만, 아직 QR로 연결되지 않은 조원은 이 코드를 직접 받아야만 화면이 넘어가요. 조원 단체 카톡방에 한 번 올리면, 이미 인증된 조원들이 각자 이 코드를 앱에 붙여넣어 오늘의 퀴즈로 넘어갈 수 있어요(아직 인증 안 된 조원은 코드를 넣어도 인증 화면에 그대로 머물러요).</p>
       <button class="action-btn primary" id="groupSyncCodeBtn" type="button">오늘의 진행 코드 만들기</button>
       <div class="kakao-box" id="groupSyncCodeBox" style="display:none;">
         <div class="kakao-text" id="groupSyncCodeText"></div>
@@ -1127,6 +1125,38 @@
     return { week: week, dayIndex: dayIndex };
   }
 
+  // 요일 자동전환(오너 요청 — 리더의 "하루 뒤" 수동 클릭 없이 실제 캘린더 요일로 진행).
+  // Date.getDay()는 일=0..토=6이라 월=0 기준으로 재배열한다. 이 앱의 dayIndex 규약은
+  // 월=0,화=1,수=2,목=3,금=4,토=5,일=6(DAY_NAMES 순서)이므로 그대로 대응된다.
+  function todayRawWeekday() {
+    var jsDay = new Date().getDay();
+    return (jsDay + 6) % 7;
+  }
+  // 금요일 제출 예외(오너 요청③) — 실제 토요일에도 금요일 퀴즈(quizIdx 3) 창을 그대로
+  // 유지해 "토요일까지 이용가능"을 구현한다. 이 캡 때문에 dayIndex=5(토요일 전용 퀴즈,
+  // quizIdx 4)는 캘린더 자동전환 도입 이후로는 더 이상 자동으로 도달하지 않는다 — 기존
+  // QUIZ_DATA는 그대로 남겨두어(데이터 삭제 없음) 이후 오너가 이 캡을 없애기로 하면 바로
+  // 되살릴 수 있다. 일요일은 그대로 6(돌림판).
+  function calendarDayIndex() {
+    var raw = todayRawWeekday();
+    return raw === 5 ? 4 : raw;
+  }
+  // 리더·조원 양쪽이 각자 자기 기기 시계로 이 함수를 호출해 "오늘이 무슨 요일인지"를
+  // 독립적으로 계산한다(리더 기기가 매일 켜져 있어야만 진행되는 단일 장애점을 피하기
+  // 위함 — 서버/Cloud Functions 없이 정적 GitHub Pages+클라이언트 Firestore 구조라
+  // 자정 크론을 돌릴 주체가 없다). Firestore groups 문서에도 계속 기록은 하되(하위호환·
+  // 참고용), 그 값을 신뢰해 조원 dayIndex를 결정하지는 않는다 — 그러면 리더 기기가 며칠
+  // 꺼져 있었을 때 조원 전원이 그 정지된 날짜에 갇히는 회귀가 생긴다.
+  function autoAdvanceDay() {
+    var d = calendarDayIndex();
+    if (d !== state.dayIndex) {
+      state.dayIndex = d;
+      save();
+      syncGroupToFirebase();
+      renderAll();
+    }
+  }
+
   // ---------- 렌더 ----------
   var panelToday = document.getElementById("panelToday");
   var rosterList = document.getElementById("rosterList");
@@ -1203,19 +1233,67 @@
     watchedMemberIds[memberId] = true;
     fbApi.watchMember(state.groupId, memberId, function (data) {
       memberFbData[memberId] = data;
+      applyIncomingMemberVerification(memberId, data);
+      applyIncomingQuizAutoGrade(memberId, data);
       if (state.dayIndex >= 0 && state.dayIndex <= 5) renderToday();
     });
+  }
+
+  // 조원이 앱에서 필사 사진을 제출하면 member.html이 자기 문서에 verified:true를 함께
+  // 써준다(오너 요청②③ — 리더 클릭 없이 자동인증). 리더 로컬 wd.verified도 그 값을
+  // 그대로 받아들여야 채점 잠금이 즉시 풀린다 — 리더의 "인증확인" 수동 토글은 카톡으로만
+  // 받은 경우(앱 미경유) 등을 위해 계속 남겨둔다(둘 중 하나만 true여도 인증된 것으로 취급,
+  // 서로 덮어쓰지 않음 — 이미 true인 걸 false로 되돌리지 않는 단방향 채택).
+  function applyIncomingMemberVerification(memberId, data) {
+    if (!data || !data.verified || data.verifiedWeek == null) return;
+    var wd = getWeekData(data.verifiedWeek);
+    if (!wd.verified[memberId]) {
+      wd.verified[memberId] = true;
+      save();
+    }
+  }
+
+  // 조원이 정답을 제출하면 즉시 자동채점해 적립한다(오너 요청④⑤ — 리더 확인 클릭
+  // 불필요). 같은 제출을 중복 적립하지 않도록(멱등성) 방금 자동채점에 반영한 제출
+  // 텍스트를 기억해두고, 그 텍스트가 그대로면 다시 건드리지 않는다 — 그래야 리더가 정답/
+  // 오답 버튼으로 수동 재판정을 해둔 걸 이 자동채점이 다음 스냅샷에서 도로 덮어쓰지
+  // 않는다(새로 제출된 답이 오면 그때는 다시 자동채점한다). wd.quiz는 (주차,조원,quizIdx)
+  // 키 하나당 값 하나만 갖는 객체라 여러 번 같은 값을 적어도 쿠폰 집계(couponsFor)가
+  // 중복 가산되지 않는다 — 구조 자체가 멱등적이다.
+  var quizAutoAppliedFor = {};
+  function applyIncomingQuizAutoGrade(memberId, data) {
+    if (!data || !data.quizAnswers) return;
+    for (var key in data.quizAnswers) {
+      var m = /^w(\d+)q(\d+)$/.exec(key);
+      if (!m) continue;
+      var w = parseInt(m[1], 10), qIdx = parseInt(m[2], 10);
+      var sub = data.quizAnswers[key];
+      if (!sub || !sub.answer) continue;
+      var wd = getWeekData(w);
+      if (!wd.verified[memberId]) continue;
+      if (!quizAutoAppliedFor[memberId]) quizAutoAppliedFor[memberId] = {};
+      var trackKey = w + "-" + qIdx;
+      if (quizAutoAppliedFor[memberId][trackKey] === sub.answer) continue;
+      var suggestion = autoJudgeQuiz(w, qIdx, sub.answer);
+      if (!suggestion) continue;
+      if (!wd.quiz[memberId]) wd.quiz[memberId] = {};
+      wd.quiz[memberId][qIdx] = suggestion;
+      quizAutoAppliedFor[memberId][trackKey] = sub.answer;
+      save();
+    }
   }
 
   function renderStatusBar() {
     weekLabel.textContent = state.week;
     chapterLabel.textContent = state.week;
-    dayLabel.textContent = DAY_NAMES[state.dayIndex];
+    // 실제 토요일엔 state.dayIndex가 4(금요일 퀴즈)로 캡되어 있어 그대로 DAY_NAMES를 쓰면
+    // "금요일"이라고 잘못 표시된다 — 실제 요일 이름은 따로 보여주고 연장 중임을 안내한다.
+    dayLabel.textContent = todayRawWeekday() === 5 ? "토요일 · 금요일 퀴즈 연장" : DAY_NAMES[state.dayIndex];
     if (state.startDate) {
       startDateNote.textContent = "시작일: " + state.startDate + " (1주차 월요일 기준)";
       startDateInput.value = state.startDate;
     } else {
-      startDateNote.textContent = "시작일이 아직 설정되지 않았어요 — 설정 탭에서 1주차 월요일 날짜를 지정하면 오늘 기준 주차가 자동 계산됩니다. 지금은 수동 이동 버튼으로만 진행할 수 있어요.";
+      startDateNote.textContent = "시작일이 아직 설정되지 않았어요 — 설정 탭에서 1주차 월요일 날짜를 지정하면 오늘 기준 주차가 자동 계산됩니다. 요일은 시작일 설정 여부와 상관없이 실제 달력에 맞춰 자동으로 넘어가요.";
     }
   }
 
@@ -1299,11 +1377,16 @@
       panelToday.appendChild(warn);
       return;
     }
-    if (state.dayIndex === 0) {
+    // 오너 요청① — 필사 인증 카드는 월~금 상시노출(요일이 지나도 계속 접근 가능해야
+    // 늦게 제출하는 조원도 인증할 수 있다). dayIndex는 calendarDayIndex()로 캡되므로
+    // 토요일도 5가 아니라 4로 들어와 quizIdx3(금요일 퀴즈) 창이 자연히 유지된다.
+    if (state.dayIndex >= 0 && state.dayIndex <= 4) {
       renderMonday();
-    } else if (state.dayIndex >= 1 && state.dayIndex <= 5) {
+    }
+    if (state.dayIndex >= 1 && state.dayIndex <= 5) {
       renderQuizDay();
-    } else {
+    }
+    if (state.dayIndex === 6) {
       renderSunday();
     }
   }
@@ -1312,12 +1395,12 @@
     var card = document.createElement("div");
     card.className = "card";
     var h2 = document.createElement("h2");
-    h2.textContent = "월요일 · 인증확인";
+    h2.textContent = "필사 인증";
     card.appendChild(h2);
     var intro = document.createElement("p");
     intro.className = "status-note";
     intro.style.marginTop = "0";
-    intro.textContent = "요한복음 " + state.week + "장을 읽고 필사한 사진을 조원이 앱에서 올리면 아래 썸네일로 바로 보여요. 사진을 눌러 확인한 뒤 해당 조원을 눌러 인증 완료로 표시하세요(카톡으로 따로 받은 경우 사진 없이 바로 인증해도 돼요). 인증해야 화~토 퀴즈 채점이 열립니다.";
+    intro.textContent = "요한복음 " + state.week + "장을 읽고 필사한 사진을 조원이 앱에서 올리면 아래 썸네일로 바로 보여요. 앱으로 제출하면 리더가 따로 누르지 않아도 자동으로 인증되고(카톡으로만 받은 경우엔 아래에서 직접 인증확인을 눌러주세요), 인증된 다음 날부터 화~금 퀴즈가 열려요(금요일에 인증하면 그날 바로 열리고 토요일까지 계속 이용할 수 있어요). 이 카드는 월~금 계속 열려 있으니 언제든 확인·인증할 수 있어요.";
     card.appendChild(intro);
 
     var wd = getWeekData(state.week);
@@ -1482,7 +1565,7 @@
       if (!verified) {
         var lockedNote = document.createElement("span");
         lockedNote.className = "locked-note";
-        lockedNote.textContent = "월요일 인증 필요";
+        lockedNote.textContent = "필사 인증 필요";
         row.appendChild(lockedNote);
       }
 
@@ -1491,6 +1574,10 @@
 
       var fbData = memberFbData[m.id];
       var qSub = fbData && fbData.quizAnswers && fbData.quizAnswers["w" + state.week + "q" + quizIdx];
+      // 자동채점·자동적립(오너 요청④⑤)은 applyIncomingQuizAutoGrade가 스냅샷 도착 즉시
+      // wd.quiz에 반영해두므로, 여기서는 확인 버튼 없이 이미 적립된 결과만 보여준다(리더
+      // 화면에서 계속 보이게 = 투명성 유지). 정답/오답 버튼은 그대로 남겨 리더가 필요하면
+      // 언제든 수동으로 재판정할 수 있다.
       if (verified && item && qSub && qSub.answer) {
         var suggestion = autoJudgeQuiz(state.week, quizIdx, qSub.answer);
         var aiRow = document.createElement("div");
@@ -1503,23 +1590,12 @@
         aiVerdict.textContent = suggestion === "correct" ? "정답" : "오답";
         aiText.appendChild(aiVerdict);
         aiRow.appendChild(aiText);
-        if (current == null) {
-          var confirmBtn = document.createElement("button");
-          confirmBtn.className = "action-btn primary ai-confirm-btn";
-          confirmBtn.type = "button";
-          confirmBtn.textContent = "확인(적립)";
-          confirmBtn.addEventListener("click", function () {
-            wd.quiz[m.id][quizIdx] = suggestion;
-            save();
-            renderToday();
-          });
-          aiRow.appendChild(confirmBtn);
-        } else {
-          var gradedNote = document.createElement("span");
-          gradedNote.className = "ai-graded-note";
-          gradedNote.textContent = "채점 완료 (" + (current === "correct" ? "정답" : "오답") + ") — 아래 버튼으로 재판정 가능";
-          aiRow.appendChild(gradedNote);
-        }
+        var gradedNote = document.createElement("span");
+        gradedNote.className = "ai-graded-note";
+        gradedNote.textContent = current != null
+          ? "자동 적립 완료 (" + (current === "correct" ? "정답" : "오답") + ") — 아래 버튼으로 재판정 가능"
+          : "적립 반영 중...";
+        aiRow.appendChild(gradedNote);
         row.appendChild(aiRow);
       }
 
@@ -1882,27 +1958,16 @@
     if (e.key === "Enter") { e.preventDefault(); addMember(); }
   });
 
-  document.getElementById("prevDayBtn").addEventListener("click", function () {
-    var d = state.dayIndex - 1, w = state.week;
-    if (d < 0) { d = 6; w -= 1; }
-    if (w < 1) { w = 1; d = 0; }
-    state.week = w; state.dayIndex = d;
-    save(); syncGroupToFirebase(); renderAll();
-  });
-  document.getElementById("nextDayBtn").addEventListener("click", function () {
-    var d = state.dayIndex + 1, w = state.week;
-    if (d > 6) { d = 0; w += 1; }
-    if (w > TOTAL_WEEKS) { w = TOTAL_WEEKS; d = 6; }
-    state.week = w; state.dayIndex = d;
-    save(); syncGroupToFirebase(); renderAll();
-  });
+  // 요일은 더 이상 이 버튼들로 수동 이동하지 않는다 — autoAdvanceDay()가 실제 캘린더
+  // 요일로 자동 계산한다(오너 요청②③④⑤). "오늘 날짜로 맞추기" 버튼은 주차(week)만
+  // startDate 기준으로 다시 맞추는 용도로 남긴다.
   document.getElementById("syncTodayBtn").addEventListener("click", function () {
     if (!state.startDate) {
       startDateNote.textContent = "먼저 설정 탭에서 시작일을 지정해 주세요.";
       return;
     }
     var p = calcPointerFromStart(state.startDate);
-    state.week = p.week; state.dayIndex = p.dayIndex;
+    state.week = p.week; state.dayIndex = calendarDayIndex();
     save(); syncGroupToFirebase(); renderAll();
   });
 
@@ -1925,7 +1990,7 @@
     nextWeekBtn.classList.remove("armed");
     nextWeekBtn.textContent = "다음 주로 ▶▶";
     if (state.week < TOTAL_WEEKS) state.week += 1;
-    state.dayIndex = 0;
+    state.dayIndex = calendarDayIndex();
     selectedSpinnerId = null;
     save(); syncGroupToFirebase(); renderAll();
   });
@@ -1935,8 +2000,16 @@
     if (!v) return;
     state.startDate = v;
     var p = calcPointerFromStart(v);
-    state.week = p.week; state.dayIndex = p.dayIndex;
+    state.week = p.week; state.dayIndex = calendarDayIndex();
     save(); syncGroupToFirebase(); renderAll();
+  });
+
+  // 요일 자동전환: 최초 로드 시 1회 즉시 반영 + 이후 탭이 열려있는 동안 자정 등 날짜변경을
+  // 놓치지 않도록 주기적으로(60초) 재확인 + 탭이 백그라운드에 있다 다시 보일 때도 재확인.
+  autoAdvanceDay();
+  setInterval(autoAdvanceDay, 60000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) autoAdvanceDay();
   });
 
   // 오늘의 동기화 코드(그룹 공통) — 리더의 현재 week/dayIndex를 그대로 담되, 인증여부(fv)는
